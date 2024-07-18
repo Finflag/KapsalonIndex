@@ -1,5 +1,7 @@
 import requests
 import pandas as pd
+import sqlite3
+from time import time
 
 class KapsalonWebService:
     # API-endpoint
@@ -27,6 +29,10 @@ class KapsalonWebService:
     }
 
     @staticmethod
+    def get_unix_timestamp():
+        return int(time())
+
+    @staticmethod
     def retrieveKapsalonDataAsJson():
         response = requests.get(KapsalonWebService.api_url, headers=KapsalonWebService.headers, params=KapsalonWebService.params)
         if response.status_code == 200:
@@ -38,14 +44,17 @@ class KapsalonWebService:
     def retrieveKapsalonProperties(jsonResponse):
         dishes = jsonResponse.get('dishes', [])
         dishes_df = pd.DataFrame(dishes)
+        
         # Bekijken van de eerste paar rijen van de DataFrame
         #print(dishes_df.head())
+        
         return dishes_df[['name', 'price', 'restaurant']]
     
     @staticmethod
     def filterDishes(selectedDishes):
         # Filteren van gerechten op basis van cuisineType "kapsalon_1694"
         #filtered_dishes = dishes_selected[dishes_selected['restaurant'].apply(lambda x: 'kapsalon_1694' in x['cuisineTypes'])]
+        
         # Uitsluiten van gerechten die de woorden 'vegetarisch' of 'vega' bevatten
         excluded_terms = "vegetarisch|vega|pizza|Broodje|kip|falafel|piri piri|en extra vlees|menu|zonder kaas|Ben & Jerry's|frisdrank|Veggie"
         #filtered_dishes = filtered_dishes[~filtered_dishes['name'].str.contains(excluded_terms, case=False, na=False)]
@@ -54,10 +63,25 @@ class KapsalonWebService:
         # Filteren van gerechten die het woord 'döner' bevatten
         included_terms = "döner"
         filtered_dishes = filtered_dishes[filtered_dishes['name'].str.contains(included_terms, case=False, na=False)]
+        
         # Extracting the city from the location and adding it to the final output
         filtered_dishes['city'] = filtered_dishes['restaurant'].apply(lambda x: x['location']['city'])
 
-        out = filtered_dishes[['name', 'price', 'city']]
+        return filtered_dishes[['name', 'price', 'city']]
 
-        # Bekijken van de gesorteerde en gefilterde kolommen
-        print(out)
+    @staticmethod
+    def insert_data_into_database(data_to_insert):
+        # Verbinding maken met SQLite-database
+        conn = sqlite3.connect('restaurants.db')
+
+        # Toevoegen van een timestamp kolom
+        data_to_insert['timestamp'] = KapsalonWebService.get_unix_timestamp()
+
+        # Invoegen van gegevens in de 'dishes'-tabel
+        data_to_insert[['name', 'price', 'city', 'timestamp']].to_sql('dishes', conn, if_exists='append', index=False)
+
+        # Commit en sluiten van de databaseverbinding
+        conn.commit()
+        conn.close()
+
+        print("Data is succesvol toegevoegd aan de SQLite database.")
